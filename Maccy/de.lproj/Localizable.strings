@@ -1,4 +1,4 @@
-"search_placeholder" = "Suchen ...";
+"search_placeholder" = "Suchen …";
 "clear_tooltip" = "Lösche nur die nicht angehefteten Einträge.\nHalte zusätzlich ⇧ gedrückt, um alle Einträge zu löschen.";
 "clear_all_tooltip" = "Lösche alle Einträge.";
 "about_tooltip" = "Informationen über die Anwendung.";
@@ -7,13 +7,9 @@
 "clear_all" = "Alle löschen";
 "about" = "Über";
 "quit" = "Beenden";
-"preferences" = "Einstellungen...";
+"preferences" = "Einstellungen…";
 "preferences_advanced" = "Erweitert";
-"preferences_appearance" = "Erscheinungsbild";
-"preferences_ignore" = "Ignorieren";
-"preferences_general" = "Allgemein";
 "preferences_pins" = "Pins";
-"preferences_storage" = "Speicher";
 "copy_modifiers_config" = "• Drücke %@, um den gewählten Eintrag zu kopieren.";
 "paste_modifiers_config" = "• Drücke %@, um den gewählten Eintrag zu kopieren und einzufügen.";
 "format_modifiers_config" = "• Drücke %@, um den gewählten Eintrag zu kopieren und unformatiert einzufügen.";

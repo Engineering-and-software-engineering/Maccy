@@ -1,45 +1,21 @@
-import AppKit
+import AppKit.NSEvent
 import KeyboardShortcuts
 import Sauce
 
 enum KeyChord: CaseIterable {
-  // Fetch paste from Edit / Paste menu item.
-  // Fallback to ⌘V if unavailable.
-  static var pasteKey: Key {
-    (NSApp.delegate as? AppDelegate)?.pasteMenuItem.key ?? .v
-  }
-  static var pasteKeyModifiers: NSEvent.ModifierFlags {
-    (NSApp.delegate as? AppDelegate)?.pasteMenuItem.keyEquivalentModifierMask ?? [.command]
-  }
-  static var deleteKey: Key? {
-    if let shortcut = KeyboardShortcuts.Shortcut(name: .delete) {
-      return Sauce.shared.key(for: shortcut.carbonKeyCode)
-    } else {
-      return nil
-    }
-  }
-  static var deleteModifiers: NSEvent.ModifierFlags? {
-    if let shortcut = KeyboardShortcuts.Shortcut(name: .delete) {
-      return shortcut.modifiers.intersection(.deviceIndependentFlagsMask)
-    } else {
-      return nil
-    }
+  static var pasteKey: Key { pasteMenuItem?.key ?? Key.v }
+  static var pasteKeyModifiers: NSEvent.ModifierFlags { pasteMenuItem?.keyEquivalentModifierMask ?? .command }
+  private static var pasteMenuItem: NSMenuItem? {
+    NSApp.mainMenu?.items
+      .flatMap { $0.submenu?.items ?? [] }
+      .first { $0.action == #selector(NSText.paste) }
   }
 
-  static var pinKey: Key? {
-    if let shortcut = KeyboardShortcuts.Shortcut(name: .pin) {
-      return Sauce.shared.key(for: shortcut.carbonKeyCode)
-    } else {
-      return nil
-    }
-  }
-  static var pinModifiers: NSEvent.ModifierFlags? {
-    if let shortcut = KeyboardShortcuts.Shortcut(name: .pin) {
-      return shortcut.modifiers.intersection(.deviceIndependentFlagsMask)
-    } else {
-      return nil
-    }
-  }
+  static var deleteKey: Key? { Sauce.shared.key(shortcut: .delete) }
+  static var deleteModifiers: NSEvent.ModifierFlags? { KeyboardShortcuts.Shortcut(name: .delete)?.modifiers }
+
+  static var pinKey: Key? { Sauce.shared.key(shortcut: .pin) }
+  static var pinModifiers: NSEvent.ModifierFlags? { KeyboardShortcuts.Shortcut(name: .pin)?.modifiers }
 
   case clearHistory
   case clearHistoryAll
@@ -47,87 +23,87 @@ enum KeyChord: CaseIterable {
   case deleteCurrentItem
   case deleteOneCharFromSearch
   case deleteLastWordFromSearch
-  case hide
   case ignored
   case moveToNext
+  case moveToLast
   case moveToPrevious
+  case moveToFirst
   case openPreferences
-  case paste
   case pinOrUnpin
   case selectCurrentItem
+  case close
   case unknown
 
-  // swiftlint:disable cyclomatic_complexity
-  init(_ key: Key, _ modifierFlags: NSEvent.ModifierFlags) {
+  init(_ event: NSEvent?) {
+    guard let event, event.type == .keyDown else {
+      self = .unknown
+      return
+    }
+
+    let modifierFlags = event.modifierFlags
+      .intersection(.deviceIndependentFlagsMask)
+      .subtracting([.capsLock, .numericPad, .function])
+    var key: Key?
+
+    if KeyboardLayout.current.commandSwitchesToQWERTY, modifierFlags.contains(.command) {
+      key = Key(QWERTYKeyCode: Int(event.keyCode))
+    } else {
+      key = Sauce.shared.key(for: Int(event.keyCode))
+    }
+
+    guard let key else {
+      self = .unknown
+      return
+    }
+
+    self.init(key, modifierFlags)
+  }
+
+  init(_ key: Key, _ modifierFlags: NSEvent.ModifierFlags) { // swiftlint:disable:this cyclomatic_complexity
     switch (key, modifierFlags) {
-    case (.delete, MenuFooter.clear.keyEquivalentModifierMask):
+    case (.delete, [.command, .option]):
       self = .clearHistory
-    case (.delete, MenuFooter.clearAll.keyEquivalentModifierMask):
+    case (.delete, [.command, .option, .shift]):
       self = .clearHistoryAll
-    case (.delete, [.command]), (.u, [.control]):
+    case (.u, [.control]):
       self = .clearSearch
     case (KeyChord.deleteKey, KeyChord.deleteModifiers):
       self = .deleteCurrentItem
-    case (.delete, []), (.h, [.control]):
+    case (.h, [.control]):
       self = .deleteOneCharFromSearch
     case (.w, [.control]):
       self = .deleteLastWordFromSearch
-    case (.j, [.control]):
+    case (.downArrow, []),
+         (.downArrow, [.shift]),
+         (.n, [.control]),
+         (.n, [.control, .shift]),
+         (.j, [.control]):
       self = .moveToNext
-    case (.k, [.control]):
+    case (.downArrow, _) where modifierFlags.contains(.command) || modifierFlags.contains(.option),
+         (.n, [.control, .option]):
+      self = .moveToLast
+    case (.upArrow, []),
+         (.upArrow, [.shift]),
+         (.p, [.control]),
+         (.p, [.control, .shift]),
+         (.k, [.control]):
       self = .moveToPrevious
+    case (.upArrow, _) where modifierFlags.contains(.command) || modifierFlags.contains(.option),
+         (.p, [.control, .option]):
+      self = .moveToFirst
     case (KeyChord.pinKey, KeyChord.pinModifiers):
       self = .pinOrUnpin
-    case (GlobalHotKey.key, GlobalHotKey.modifierFlags):
-      self = .hide
-    case (.comma, MenuFooter.preferences.keyEquivalentModifierMask):
+    case (.comma, [.command]):
       self = .openPreferences
-    case (KeyChord.pasteKey, KeyChord.pasteKeyModifiers):
-      self = .paste
-    case (.return, _), (.keypadEnter, _):
+    case (.return, _),
+         (.keypadEnter, _):
       self = .selectCurrentItem
-    case (_, _) where Self.keysToSkip.contains(key) || !modifierFlags.isDisjoint(with: Self.modifiersToSkip):
+    case (.escape, _):
+      self = .close
+    case (_, _) where !modifierFlags.isDisjoint(with: [.command, .control, .option]):
       self = .ignored
     default:
       self = .unknown
     }
   }
-  // swiftlint:enable cyclomatic_complexity
-
-  private static let keysToSkip = [
-    Key.home,
-    Key.pageUp,
-    Key.pageDown,
-    Key.end,
-    Key.downArrow,
-    Key.leftArrow,
-    Key.rightArrow,
-    Key.upArrow,
-    Key.escape,
-    Key.tab,
-    Key.f1,
-    Key.f2,
-    Key.f3,
-    Key.f4,
-    Key.f5,
-    Key.f6,
-    Key.f7,
-    Key.f8,
-    Key.f9,
-    Key.f10,
-    Key.f11,
-    Key.f12,
-    Key.f13,
-    Key.f14,
-    Key.f15,
-    Key.f16,
-    Key.f17,
-    Key.f18,
-    Key.f19
-  ]
-  private static let modifiersToSkip = NSEvent.ModifierFlags([
-    .command,
-    .control,
-    .option
-  ])
 }

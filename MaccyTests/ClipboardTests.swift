@@ -1,4 +1,5 @@
 import XCTest
+import Defaults
 @testable import Maccy
 
 // swiftlint:disable type_body_length
@@ -19,37 +20,35 @@ class ClipboardTests: XCTestCase {
   let transientType = NSPasteboard.PasteboardType.transient
   let unknownType = NSPasteboard.PasteboardType(rawValue: "com.apple.AnnotationKit.AnnotationItem")
 
-  let savedEnabledTypes = UserDefaults.standard.enabledPasteboardTypes
-  let savedIgnoreEvents = UserDefaults.standard.ignoreEvents
-  let savedIgnoreAllAppsExceptListed = UserDefaults.standard.ignoreAllAppsExceptListed
-  let savedIgnoredApps = UserDefaults.standard.ignoredApps
-  let savedIgnoredPasteboardTypes = UserDefaults.standard.ignoredPasteboardTypes
+  let savedEnabledTypes = Defaults[.enabledPasteboardTypes]
+  let savedIgnoreEvents = Defaults[.ignoreEvents]
+  let savedIgnoreAllAppsExceptListed = Defaults[.ignoreAllAppsExceptListed]
+  let savedIgnoredApps = Defaults[.ignoredApps]
+  let savedIgnoredPasteboardTypes = Defaults[.ignoredPasteboardTypes]
 
   override func setUp() {
     super.setUp()
-    CoreDataManager.inMemory = true
-    UserDefaults.standard.ignoreAllAppsExceptListed = false
-    UserDefaults.standard.ignoreEvents = false
+    Defaults[.ignoreAllAppsExceptListed] = false
+    Defaults[.ignoreEvents] = false
   }
 
   override func tearDown() {
     super.tearDown()
-    CoreDataManager.inMemory = false
-    UserDefaults.standard.enabledPasteboardTypes = savedEnabledTypes
-    UserDefaults.standard.ignoreEvents = savedIgnoreEvents
-    UserDefaults.standard.ignoreOnlyNextEvent = false
-    UserDefaults.standard.ignoreAllAppsExceptListed = savedIgnoreAllAppsExceptListed
-    UserDefaults.standard.ignoredApps = savedIgnoredApps
-    UserDefaults.standard.ignoredPasteboardTypes = savedIgnoredPasteboardTypes
+    Defaults[.enabledPasteboardTypes] = savedEnabledTypes
+    Defaults[.ignoreEvents] = savedIgnoreEvents
+    Defaults[.ignoreOnlyNextEvent] = false
+    Defaults[.ignoreAllAppsExceptListed] = savedIgnoreAllAppsExceptListed
+    Defaults[.ignoredApps] = savedIgnoredApps
+    Defaults[.ignoredPasteboardTypes] = savedIgnoredPasteboardTypes
     clipboard.clearHooks()
   }
 
   func testChangesListenerAndAddHooks() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
@@ -58,10 +57,10 @@ class ClipboardTests: XCTestCase {
   func testIgnoreStringWithOnlySpaces() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString(" ", forType: .string)
     waitForExpectations(timeout: 2)
@@ -70,10 +69,10 @@ class ClipboardTests: XCTestCase {
   func testIgnoreStringWithOnlyNewlines() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("\n", forType: .string)
     waitForExpectations(timeout: 2)
@@ -81,10 +80,10 @@ class ClipboardTests: XCTestCase {
 
   func testDoesNotIgnoreRTF() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     let rtf = NSAttributedString(string: "foo").rtf(
       from: NSRange(0...2),
       documentAttributes: [:]
@@ -96,70 +95,70 @@ class ClipboardTests: XCTestCase {
 
   func testDoesNotIgnoreHTML() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.html], owner: nil)
     pasteboard.setString("foo", forType: .html)
     waitForExpectations(timeout: 2)
   }
 
   func testIgnoreEventsIsEnabled() {
-    UserDefaults.standard.ignoreEvents = true
+    Defaults[.ignoreEvents] = true
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("foo", forType: .string)
     waitForExpectations(timeout: 2)
   }
 
   func testIgnoreOnlyNextEventIsEnabled() {
-    UserDefaults.standard.ignoreEvents = true
-    UserDefaults.standard.ignoreOnlyNextEvent = true
+    Defaults[.ignoreEvents] = true
+    Defaults[.ignoreOnlyNextEvent] = true
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("foo", forType: .string)
     waitForExpectations(timeout: 2)
 
-    XCTAssertFalse(UserDefaults.standard.ignoreEvents)
-    XCTAssertFalse(UserDefaults.standard.ignoreOnlyNextEvent)
+    XCTAssertFalse(Defaults[.ignoreEvents])
+    XCTAssertFalse(Defaults[.ignoreOnlyNextEvent])
   }
 
   func testIgnoreApplication() {
-    UserDefaults.standard.ignoredApps = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
   }
 
   func testIgnoreAllApplicationsExcept() {
-    UserDefaults.standard.ignoreAllAppsExceptListed = true
-    UserDefaults.standard.ignoredApps = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+    Defaults[.ignoreAllAppsExceptListed] = true
+    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
 
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
@@ -168,24 +167,24 @@ class ClipboardTests: XCTestCase {
   func testIgnoreTransientTypes() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string, transientType], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
   }
 
   func testIgnoreCustomTypes() {
-    UserDefaults.standard.ignoredPasteboardTypes = [customType.rawValue]
+    Defaults[.ignoredPasteboardTypes] = [customType.rawValue]
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.string, customType], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
@@ -194,60 +193,74 @@ class ClipboardTests: XCTestCase {
   func testIgnoreCopiesWithUnknownTypes() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([unknownType], owner: nil)
     pasteboard.setString(" ", forType: unknownType)
     waitForExpectations(timeout: 2)
   }
 
+  @MainActor
   func testCopy() {
     let imageData = image.tiffRepresentation!
-    let item = HistoryItem(contents: [
+    let contents = [
       HistoryItemContent(type: stringType.rawValue, value: "foo".data(using: .utf8)!),
       HistoryItemContent(type: tiffType.rawValue, value: imageData),
       HistoryItemContent(type: fileURLType.rawValue, value: "file://foo.bar".data(using: .utf8)!)
-    ])
+    ]
+    let item = HistoryItem()
+    Storage.shared.context.insert(item)
+    item.contents = contents
+    item.application = "com.foo.bar"
     clipboard.copy(item)
     XCTAssertEqual(pasteboard.string(forType: .string), "foo")
     XCTAssertEqual(pasteboard.data(forType: .tiff), imageData)
     XCTAssertEqual(pasteboard.string(forType: .fileURL), "file://foo.bar")
     XCTAssertEqual(pasteboard.string(forType: .fromMaccy), "")
+    XCTAssertEqual(pasteboard.string(forType: .source), "com.foo.bar")
   }
 
+  @MainActor
   func testCopyWithoutFormatting() {
-    let item = HistoryItem(contents: [
+    let contents = [
       HistoryItemContent(type: stringType.rawValue, value: "foo".data(using: .utf8)!),
+      HistoryItemContent(type: fileURLType.rawValue, value: "file://foo.bar".data(using: .utf8)!),
       HistoryItemContent(type: rtfType.rawValue,
                          value: coloredString.rtf(from: NSRange(location: 0, length: coloredString.length),
                                                   documentAttributes: [:]))
-    ])
+    ]
+    let item = HistoryItem()
+    Storage.shared.context.insert(item)
+    item.contents = contents
+    item.application = "com.foo.bar"
     clipboard.copy(item, removeFormatting: true)
     XCTAssertEqual(pasteboard.string(forType: .string), "foo")
     XCTAssertEqual(pasteboard.string(forType: .fromMaccy), "")
+    XCTAssertEqual(pasteboard.string(forType: .source), "com.foo.bar")
+    XCTAssertEqual(pasteboard.string(forType: .fileURL), "file://foo.bar")
     XCTAssertNil(pasteboard.data(forType: .rtf))
   }
 
   func testHandlesItemsWithoutData() {
     let hookExpectation = expectation(description: "Hook is called")
     pasteboard.clearContents()
-    clipboard.onNewCopy({ (_: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (_: HistoryItem) in
       hookExpectation.fulfill()
     })
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.declareTypes([.fileURL, .string], owner: nil)
     // fileURL is left without data
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
   }
 
-  func testMergesMulitpleItems() {
+  func testMergesMultipleItems() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) -> Void in
+    clipboard.onNewCopy({ (item: HistoryItem) in
       XCTAssertEqual(
-        Set(item.getContents().map({ $0.type })),
+        Set(item.contents.map({ $0.type })),
         Set([self.tiffType.rawValue, self.stringType.rawValue])
       )
       hookExpectation.fulfill()
@@ -258,7 +271,7 @@ class ClipboardTests: XCTestCase {
     let item2 = NSPasteboardItem()
     item2.setData(image.tiffRepresentation!, forType: .tiff)
 
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.clearContents()
     pasteboard.writeObjects([item1, item2])
 
@@ -266,11 +279,11 @@ class ClipboardTests: XCTestCase {
   }
 
   func testRemovesDisabledTypes() {
-    UserDefaults.standard.enabledPasteboardTypes = [.fileURL]
+    Defaults[.enabledPasteboardTypes] = [.fileURL]
 
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) -> Void in
-      XCTAssertEqual(item.getContents().map({ $0.type }), [self.fileURLType.rawValue])
+    clipboard.onNewCopy({ (item: HistoryItem) in
+      XCTAssertEqual(item.contents.map({ $0.type }), [self.fileURLType.rawValue])
       hookExpectation.fulfill()
     })
 
@@ -279,7 +292,7 @@ class ClipboardTests: XCTestCase {
     item.setData(image.tiffRepresentation!, forType: .tiff)
     item.setData("file://foo.bar".data(using: .utf8)!, forType: .fileURL)
 
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.clearContents()
     pasteboard.writeObjects([item])
 
@@ -288,8 +301,8 @@ class ClipboardTests: XCTestCase {
 
   func testRemovesDynamicTypes() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) -> Void in
-      XCTAssertEqual(item.getContents().map({ $0.type }), [self.stringType.rawValue])
+    clipboard.onNewCopy({ (item: HistoryItem) in
+      XCTAssertEqual(item.contents.map({ $0.type }), [self.stringType.rawValue])
       hookExpectation.fulfill()
     })
 
@@ -297,7 +310,7 @@ class ClipboardTests: XCTestCase {
     item.setString("foo", forType: .string)
     item.setData("".data(using: .utf8)!, forType: dynamicType)
 
-    clipboard.startListening()
+    clipboard.start()
     pasteboard.clearContents()
     pasteboard.writeObjects([item])
 

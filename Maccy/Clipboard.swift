@@ -1,4 +1,5 @@
 import AppKit
+import Defaults
 import Sauce
 
 class Clipboard {
@@ -10,7 +11,8 @@ class Clipboard {
   var changeCount: Int
 
   private let pasteboard = NSPasteboard.general
-  private let timerInterval = 1.0
+
+  private var timer: Timer?
 
   private let dynamicTypePrefix = "dyn."
   private let microsoftSourcePrefix = "com.microsoft.ole.source."
@@ -27,9 +29,8 @@ class Clipboard {
     .concealed,
     .transient
   ]
-  private let modifiedTypes: Set<NSPasteboard.PasteboardType> = [.modified]
 
-  private var enabledTypes: Set<NSPasteboard.PasteboardType> { UserDefaults.standard.enabledPasteboardTypes }
+  private var enabledTypes: Set<NSPasteboard.PasteboardType> { Defaults[.enabledPasteboardTypes] }
   private var disabledTypes: Set<NSPasteboard.PasteboardType> { supportedTypes.subtracting(enabledTypes) }
 
   private var sourceApp: NSRunningApplication? { NSWorkspace.shared.frontmostApplication }
@@ -46,81 +47,98 @@ class Clipboard {
     onNewCopyHooks = []
   }
 
-  func startListening() {
-    Timer.scheduledTimer(timeInterval: timerInterval,
-                         target: self,
-                         selector: #selector(checkForChangesInPasteboard),
-                         userInfo: nil,
-                         repeats: true)
+  func start() {
+    timer = Timer.scheduledTimer(
+      timeInterval: Defaults[.clipboardCheckInterval],
+      target: self,
+      selector: #selector(checkForChangesInPasteboard),
+      userInfo: nil,
+      repeats: true
+    )
   }
 
+  func restart() {
+    timer?.invalidate()
+    start()
+  }
+
+  @MainActor
   func copy(_ string: String) {
     pasteboard.clearContents()
     pasteboard.setString(string, forType: .string)
+    sync()
     checkForChangesInPasteboard()
   }
 
+  @MainActor
   func copy(_ item: HistoryItem?, removeFormatting: Bool = false) {
     guard let item else { return }
 
     pasteboard.clearContents()
-    var contents = item.getContents()
+    var contents = item.contents
 
     if removeFormatting {
-      let stringContents = contents.filter({
-        NSPasteboard.PasteboardType($0.type) == .string
-      })
-
-      // If there is no string representation of data,
-      // behave like we didn't have to remove formatting.
-      if !stringContents.isEmpty {
-        contents = stringContents
-      }
+      contents = clearFormatting(contents)
     }
 
     for content in contents {
+      guard content.type != NSPasteboard.PasteboardType.fileURL.rawValue else { continue }
       pasteboard.setData(content.value, forType: NSPasteboard.PasteboardType(content.type))
     }
+
+    // Use writeObjects for file URLs so that multiple files that are copied actually work.
+    // Only do this for file URLs because it causes an issue with some other data types (like formatted text)
+    // where the item is pasted more than once.
+    let fileURLItems: [NSPasteboardItem] = contents.compactMap { item in
+      guard item.type == NSPasteboard.PasteboardType.fileURL.rawValue else { return nil }
+      guard let value = item.value else { return nil }
+      let pasteItem = NSPasteboardItem()
+      pasteItem.setData(value, forType: NSPasteboard.PasteboardType(item.type))
+      return pasteItem
+    }
+    pasteboard.writeObjects(fileURLItems)
+
     pasteboard.setString("", forType: .fromMaccy)
+    pasteboard.setString(item.application ?? "", forType: .source)
+    sync()
 
-    Notifier.notify(body: item.title, sound: .knock)
-
-    checkForChangesInPasteboard()
+    Task {
+      Notifier.notify(body: item.title, sound: .knock)
+      checkForChangesInPasteboard()
+    }
   }
 
   // Based on https://github.com/Clipy/Clipy/blob/develop/Clipy/Sources/Services/PasteService.swift.
   func paste() {
     Accessibility.check()
 
-    DispatchQueue.main.async {
-      // Add flag that left/right modifier key has been pressed.
-      // See https://github.com/TermiT/Flycut/pull/18 for details.
-      let cmdFlag = CGEventFlags(rawValue: UInt64(KeyChord.pasteKeyModifiers.rawValue) | 0x000008)
-      var vCode = Sauce.shared.keyCode(for: KeyChord.pasteKey)
+    // Add flag that left/right modifier key has been pressed.
+    // See https://github.com/TermiT/Flycut/pull/18 for details.
+    let cmdFlag = CGEventFlags(rawValue: UInt64(KeyChord.pasteKeyModifiers.rawValue) | 0x000008)
+    var vCode = Sauce.shared.keyCode(for: KeyChord.pasteKey)
 
-      // Force QWERTY keycode when keyboard layout switches to
-      // QWERTY upon pressing ⌘ key (e.g. "Dvorak - QWERTY ⌘").
-      // See https://github.com/p0deje/Maccy/issues/482 for details.
-      if KeyboardLayout.current.commandSwitchesToQWERTY && cmdFlag.contains(.maskCommand) {
-        vCode = KeyChord.pasteKey.QWERTYKeyCode
-      }
-
-      let source = CGEventSource(stateID: .combinedSessionState)
-      // Disable local keyboard events while pasting
-      source?.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
-                                                         state: .eventSuppressionStateSuppressionInterval)
-
-      let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: vCode, keyDown: true)
-      let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: vCode, keyDown: false)
-      keyVDown?.flags = cmdFlag
-      keyVUp?.flags = cmdFlag
-      keyVDown?.post(tap: .cgAnnotatedSessionEventTap)
-      keyVUp?.post(tap: .cgAnnotatedSessionEventTap)
+    // Force QWERTY keycode when keyboard layout switches to
+    // QWERTY upon pressing ⌘ key (e.g. "Dvorak - QWERTY ⌘").
+    // See https://github.com/p0deje/Maccy/issues/482 for details.
+    if KeyboardLayout.current.commandSwitchesToQWERTY && cmdFlag.contains(.maskCommand) {
+      vCode = KeyChord.pasteKey.QWERTYKeyCode
     }
+
+    let source = CGEventSource(stateID: .combinedSessionState)
+    // Disable local keyboard events while pasting
+    source?.setLocalEventsFilterDuringSuppressionState([.permitLocalMouseEvents, .permitSystemDefinedEvents],
+                                                       state: .eventSuppressionStateSuppressionInterval)
+
+    let keyVDown = CGEvent(keyboardEventSource: source, virtualKey: vCode, keyDown: true)
+    let keyVUp = CGEvent(keyboardEventSource: source, virtualKey: vCode, keyDown: false)
+    keyVDown?.flags = cmdFlag
+    keyVUp?.flags = cmdFlag
+    keyVDown?.post(tap: .cgSessionEventTap)
+    keyVUp?.post(tap: .cgSessionEventTap)
   }
 
   func clear() {
-    guard UserDefaults.standard.clearSystemClipboard else {
+    guard Defaults[.clearSystemClipboard] else {
       return
     }
 
@@ -128,6 +146,7 @@ class Clipboard {
   }
 
   @objc
+  @MainActor
   func checkForChangesInPasteboard() {
     guard pasteboard.changeCount != changeCount else {
       return
@@ -135,10 +154,10 @@ class Clipboard {
 
     changeCount = pasteboard.changeCount
 
-    if UserDefaults.standard.ignoreEvents {
-      if UserDefaults.standard.ignoreOnlyNextEvent {
-        UserDefaults.standard.ignoreEvents = false
-        UserDefaults.standard.ignoreOnlyNextEvent = false
+    if Defaults[.ignoreEvents] {
+      if Defaults[.ignoreOnlyNextEvent] {
+        Defaults[.ignoreEvents] = false
+        Defaults[.ignoreOnlyNextEvent] = false
       }
 
       return
@@ -151,19 +170,17 @@ class Clipboard {
       return
     }
 
-    if let sourceAppBundle = sourceApp?.bundleIdentifier {
-      if shouldIgnore(sourceAppBundle) {
-        return
-      }
+    if let sourceAppBundle = sourceApp?.bundleIdentifier, shouldIgnore(sourceAppBundle) {
+      return
     }
 
     // Some applications (BBEdit, Edge) add 2 items to pasteboard when copying
     // so it's better to merge all data into a single record.
     // - https://github.com/p0deje/Maccy/issues/78
     // - https://github.com/p0deje/Maccy/issues/472
-    var contents: [HistoryItemContent] = []
+    var contents = [HistoryItemContent]()
     pasteboard.pasteboardItems?.forEach({ item in
-      let types = Set(item.types)
+      var types = Set(item.types)
       if types.contains(.string) && isEmptyString(item) && !richText(item) {
         return
       }
@@ -172,39 +189,55 @@ class Clipboard {
         return
       }
 
-      contents += types
+      types = types
         .subtracting(disabledTypes)
-        .subtracting([.microsoftLinkSource, .microsoftObjectLink])
-        .filter { !$0.rawValue.starts(with: dynamicTypePrefix) && !$0.rawValue.starts(with: microsoftSourcePrefix) }
-        .map { HistoryItemContent(type: $0.rawValue, value: item.data(forType: $0)) }
+        .filter { !$0.rawValue.starts(with: dynamicTypePrefix) }
+        .filter { !$0.rawValue.starts(with: microsoftSourcePrefix) }
+
+      // Avoid reading Microsoft Word links from bookmarks and cross-references.
+      // https://github.com/p0deje/Maccy/issues/613
+      // https://github.com/p0deje/Maccy/issues/770
+      if types.isSuperset(of: [.microsoftLinkSource, .microsoftObjectLink]) {
+        types = types.subtracting([.microsoftLinkSource, .microsoftObjectLink, .pdf])
+      }
+
+      types.forEach { type in
+        contents.append(HistoryItemContent(type: type.rawValue, value: item.data(forType: type)))
+      }
     })
 
     guard !contents.isEmpty else {
       return
     }
 
-    let historyItem = HistoryItem(contents: contents, application: sourceApp?.bundleIdentifier)
+    let historyItem = HistoryItem()
+    Storage.shared.context.insert(historyItem)
+
+    historyItem.contents = contents
+    historyItem.application = sourceApp?.bundleIdentifier
+    historyItem.title = historyItem.generateTitle()
+
     onNewCopyHooks.forEach({ $0(historyItem) })
   }
 
   private func shouldIgnore(_ types: Set<NSPasteboard.PasteboardType>) -> Bool {
     let ignoredTypes = self.ignoredTypes
-      .union(UserDefaults.standard.ignoredPasteboardTypes.map({ NSPasteboard.PasteboardType($0) }))
+      .union(Defaults[.ignoredPasteboardTypes].map({ NSPasteboard.PasteboardType($0) }))
 
     return types.isDisjoint(with: enabledTypes) ||
       !types.isDisjoint(with: ignoredTypes)
   }
 
   private func shouldIgnore(_ sourceAppBundle: String) -> Bool {
-    if UserDefaults.standard.ignoreAllAppsExceptListed {
-      return !UserDefaults.standard.ignoredApps.contains(sourceAppBundle)
+    if Defaults[.ignoreAllAppsExceptListed] {
+      return !Defaults[.ignoredApps].contains(sourceAppBundle)
     } else {
-      return UserDefaults.standard.ignoredApps.contains(sourceAppBundle)
+      return Defaults[.ignoredApps].contains(sourceAppBundle)
     }
   }
 
   private func shouldIgnore(_ item: NSPasteboardItem) -> Bool {
-    for regexp in UserDefaults.standard.ignoreRegexp {
+    for regexp in Defaults[.ignoreRegexp] {
       if let string = item.string(forType: .string) {
         do {
           let regex = try NSRegularExpression(pattern: regexp)
@@ -241,5 +274,39 @@ class Clipboard {
     }
 
     return false
+  }
+
+  // Some applications requires window be unfocused and focused back to sync the clipboard.
+  // - Chrome Remote Desktop (https://github.com/p0deje/Maccy/issues/948)
+  // - Netbeans (https://github.com/p0deje/Maccy/issues/879)
+  private func sync() {
+    guard let app = sourceApp,
+          app.bundleURL?.lastPathComponent == "Chrome Remote Desktop.app" ||
+            app.localizedName?.contains("NetBeans") == true else {
+      return
+    }
+
+    NSApp.activate(ignoringOtherApps: true)
+    NSApp.hide(self)
+  }
+
+  private func clearFormatting(_ contents: [HistoryItemContent]) -> [HistoryItemContent] {
+    var newContents: [HistoryItemContent] = contents
+    let stringContents = contents.filter { NSPasteboard.PasteboardType($0.type) == .string }
+
+    // If there is no string representation of data,
+    // behave like we didn't have to remove formatting.
+    if !stringContents.isEmpty {
+      newContents = stringContents
+
+      // Preserve file URLs.
+      // https://github.com/p0deje/Maccy/issues/962
+      let fileURLContents = contents.filter { NSPasteboard.PasteboardType($0.type) == .fileURL }
+      if !fileURLContents.isEmpty {
+        newContents += fileURLContents
+      }
+    }
+
+    return newContents
   }
 }

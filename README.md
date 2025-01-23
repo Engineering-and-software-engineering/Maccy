@@ -1,15 +1,15 @@
+
 <img width="128px" src="https://maccy.app/img/maccy/Logo.png" alt="Logo" align="left" />
 
 # [Maccy](https://maccy.app)
 
 [![Downloads](https://img.shields.io/github/downloads/p0deje/Maccy/total.svg)](https://github.com/p0deje/Maccy/releases/latest)
 [![Build Status](https://img.shields.io/bitrise/716921b669780314/master?token=3pMiCb5dpFzlO-7jTYtO3Q)](https://app.bitrise.io/app/716921b669780314)
-[![Donate](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/p0deje)
 
 Maccy is a lightweight clipboard manager for macOS. It keeps the history of what you copy
 and lets you quickly navigate, search, and use previous clipboard contents.
 
-Maccy works on macOS Mojave 10.14 or higher.
+Maccy works on macOS Sonoma 14 or higher.
 
 <!-- vim-markdown-toc GFM -->
 
@@ -17,10 +17,15 @@ Maccy works on macOS Mojave 10.14 or higher.
 * [Install](#install)
 * [Usage](#usage)
 * [Advanced](#advanced)
-    * [Ignore Copied Items](#ignore-copied-items)
-    * [Ignore Custom Copy Types](#ignore-custom-copy-types)
+  * [Ignore Copied Items](#ignore-copied-items)
+  * [Ignore Custom Copy Types](#ignore-custom-copy-types)
+  * [Speed up Clipboard Check Interval](#speed-up-clipboard-check-interval)
 * [FAQ](#faq)
-    * [Why doesn't it paste when I select an item in history?](#why-doesnt-it-paste-when-i-select-an-item-in-history)
+  * [Why doesn't it paste when I select an item in history?](#why-doesnt-it-paste-when-i-select-an-item-in-history)
+  * [When assigning a hotkey to open Maccy, it says that this hotkey is already used in some system setting.](#when-assigning-a-hotkey-to-open-maccy-it-says-that-this-hotkey-is-already-used-in-some-system-setting)
+  * [How to restore hidden footer?](#how-to-restore-hidden-footer)
+  * [How to ignore copies from Universal Clipboard?](#how-to-ignore-copies-from-universal-clipboard)
+* [Translations](#translations)
 * [Motivation](#motivation)
 * [License](#license)
 
@@ -55,7 +60,7 @@ brew install maccy
 9. To clear all unpinned items, select _Clear_ in the menu, or press <kbd>OPTION (⌥)</kbd> + <kbd>COMMAND (⌘)</kbd> + <kbd>DELETE (⌫)</kbd>. To clear all items including pinned, select _Clear_ in the menu with  <kbd>OPTION (⌥)</kbd> pressed, or press <kbd>SHIFT (⇧)</kbd> + <kbd>OPTION (⌥)</kbd> + <kbd>COMMAND (⌘)</kbd> + <kbd>DELETE (⌫)</kbd>.
 10. To disable Maccy and ignore new copies, click on the menu icon with <kbd>OPTION (⌥)</kbd> pressed.
 11. To ignore only the next copy, click on the menu icon with <kbd>OPTION (⌥)</kbd> + <kbd>SHIFT (⇧)</kbd> pressed.
-12. To customize the behavior, check "Preferences..." window, or press <kbd>COMMAND (⌘)</kbd> + <kbd>,</kbd>.
+12. To customize the behavior, check "Preferences…" window, or press <kbd>COMMAND (⌘)</kbd> + <kbd>,</kbd>.
 
 ## Advanced
 
@@ -89,29 +94,60 @@ or overwritten:
 * `Pasteboard generator type`
 * `net.antelle.keeweb`
 
-You can add additional custom types using preferences or `defaults`:
-
-```sh
-defaults write org.p0deje.Maccy ignoredPasteboardTypes -array-add "com.myapp.CustomType"
-```
-
-If you need to find what custom types are used by an application, you can use
+You can add additional custom types using settings.
+To find what custom types are used by an application, you can use
 free application [Pasteboard-Viewer](https://github.com/sindresorhus/Pasteboard-Viewer).
 Simply download the application, open it, copy something from the application you
 want to ignore and look for any custom types in the left sidebar. [Here is an example
 of using this approach to ignore Adobe InDesign](https://github.com/p0deje/Maccy/issues/125).
 
-If you accidentally removed default types, you can restore the original configuration:
+### Speed up Clipboard Check Interval
+
+By default, Maccy checks clipboard every 500 ms, which should be enough for most users. If you want
+to speed it up, you can change it with `defaults`:
 
 ```sh
-defaults write org.p0deje.Maccy ignoredPasteboardTypes -array "de.petermaurer.TransientPasteboardType" "com.typeit4me.clipping" "Pasteboard generator type" "com.agilebits.onepassword" "net.antelle.keeweb"
+defaults write org.p0deje.Maccy clipboardCheckInterval 0.1 # 100 ms
 ```
+
 ## FAQ
 
 ### Why doesn't it paste when I select an item in history?
 
 1. Make sure you have "Paste automatically" enabled in Preferences.
 2. Make sure "Maccy" is added to System Settings -> Privacy & Security -> Accessibility.
+
+### When assigning a hotkey to open Maccy, it says that this hotkey is already used in some system setting.
+
+1. Open System settings -> Keyboard -> Keyboard Shortcuts.
+2. Find where that hotkey is used. For example, "Convert text to simplified Chinese" is under Services -> Text.
+3. Disable that hotkey or remove assigned combination ([screenshot](https://github.com/p0deje/Maccy/assets/576152/446719e6-c3e5-4eb0-95fb-5a811066487f)).
+4. Restart Maccy.
+5. Assign hotkey in Maccy settings.
+
+### How to restore hidden footer?
+
+1. Open Maccy window.
+2. Press ⌘, to open preferences.
+3. Enable footer in Appearance section.
+
+If for some reason it doesn't work, run the following command in Terminal.app:
+
+```sh
+defaults write org.p0deje.Maccy showFooter 1
+```
+
+### How to ignore copies from [Universal Clipboard](https://support.apple.com/en-us/102430)?
+
+1. Open Preferences -> Ignore -> Pasteboard Types.
+2. Add `com.apple.is-remote-clipboard`.
+
+## Translations
+
+The translations are hosted in [Weblate](https://hosted.weblate.org/engage/maccy/).
+You can use it to suggest changes in translations and localize the application to a new language.
+
+[![Translation status](https://hosted.weblate.org/widget/maccy/multi-auto.svg)](https://hosted.weblate.org/engage/maccy/)
 
 ## Motivation
 
@@ -121,6 +157,7 @@ a clipboard manager that is as free and simple as [Parcellite](http://parcellite
 but I couldn't. So I've decided to build one.
 
 Also, I wanted to learn Swift and get acquainted with macOS application development.
+
 
 ## License
 

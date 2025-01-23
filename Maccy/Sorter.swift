@@ -1,22 +1,39 @@
 import AppKit
+import Defaults
 
 // swiftlint:disable identifier_name
+// swiftlint:disable type_name
 class Sorter {
-  private var by: String
+  enum By: String, CaseIterable, Identifiable, CustomStringConvertible, Defaults.Serializable {
+    case lastCopiedAt
+    case firstCopiedAt
+    case numberOfCopies
 
-  init(by: String) {
-    self.by = by
+    var id: Self { self }
+
+    var description: String {
+      switch self {
+      case .lastCopiedAt:
+        return NSLocalizedString("LastCopiedAt", tableName: "StorageSettings", comment: "")
+      case .firstCopiedAt:
+        return NSLocalizedString("FirstCopiedAt", tableName: "StorageSettings", comment: "")
+      case .numberOfCopies:
+        return NSLocalizedString("NumberOfCopies", tableName: "StorageSettings", comment: "")
+      }
+    }
   }
 
-  public func sort(_ items: [HistoryItem]) -> [HistoryItem] {
-    return items.sorted(by: bySortingAlgorithm(_:_:)).sorted(by: byPinned(_:_:))
+  func sort(_ items: [HistoryItem], by: By = Defaults[.sortBy]) -> [HistoryItem] {
+    return items
+      .sorted(by: { return bySortingAlgorithm($0, $1, by) })
+      .sorted(by: byPinned)
   }
 
-  private func bySortingAlgorithm(_ lhs: HistoryItem, _ rhs: HistoryItem) -> Bool {
+  private func bySortingAlgorithm(_ lhs: HistoryItem, _ rhs: HistoryItem, _ by: By) -> Bool {
     switch by {
-    case "firstCopiedAt":
+    case .firstCopiedAt:
       return lhs.firstCopiedAt > rhs.firstCopiedAt
-    case "numberOfCopies":
+    case .numberOfCopies:
       return lhs.numberOfCopies > rhs.numberOfCopies
     default:
       return lhs.lastCopiedAt > rhs.lastCopiedAt
@@ -24,10 +41,12 @@ class Sorter {
   }
 
   private func byPinned(_ lhs: HistoryItem, _ rhs: HistoryItem) -> Bool {
-    if UserDefaults.standard.pinTo == "bottom" {
+    if Defaults[.pinTo] == .bottom {
       return (lhs.pin == nil) && (rhs.pin != nil)
     } else {
       return (lhs.pin != nil) && (rhs.pin == nil)
     }
   }
 }
+// swiftlint:enable identifier_name
+// swiftlint:enable type_name

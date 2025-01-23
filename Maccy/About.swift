@@ -2,7 +2,7 @@ import Cocoa
 
 class About {
   private let familyCredits = NSAttributedString(
-    string: "Special thank you to Tonia & Guy! ❤️",
+    string: "Special thank you to Tonia, Anna & Guy! ❤️",
     attributes: [NSAttributedString.Key.foregroundColor: NSColor.labelColor]
   )
 
@@ -35,7 +35,7 @@ class About {
   }
 
   @objc
-  func openAbout(_ sender: NSMenuItem) {
+  func openAbout(_ sender: NSMenuItem?) {
     NSApp.activate(ignoringOtherApps: true)
     NSApp.orderFrontStandardAboutPanel(options: [NSApplication.AboutPanelOptionKey.credits: credits])
   }
